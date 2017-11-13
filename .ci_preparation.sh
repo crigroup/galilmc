@@ -9,7 +9,7 @@ apt-key add GALIL-PUB-KEY
 wget http://www.galil.com/sw/pub/ubuntu/$UVER/galil.list -O /etc/apt/sources.list.d/galil.list
 apt-get update
 # Install gclib
-apt-get install gclib
+apt-get install gclib -y
 # Install the gclib Python wrapper
 mkdir ~/gclib_wrapper
 cd ~/gclib_wrapper
