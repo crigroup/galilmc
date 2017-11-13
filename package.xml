@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>galilmc</name>
+  <version>0.0.0</version>
+  <description>The galilmc package</description>
+
+  <author email="fsuarez6@gmail.com">Francisco Suarez-Ruiz</author>
+  <maintainer email="fsuarez6@gmail.com">Francisco Suarez-Ruiz</maintainer>
+  <license>BSD 3-Clause</license>
+  <url type="website">http://wiki.ros.org/galilmc</url>
+  <url type="repository">https://github.com/crigroup/galilmc</url>
+  <url type="bugtracker">https://github.com/crigroup/galilmc/issues</url>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <exec_depend>rospy</exec_depend>
+
+</package>
