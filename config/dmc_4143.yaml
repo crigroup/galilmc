@@ -1,0 +1,35 @@
+# Sensor and state controllers
+address: 192.168.0.71
+rate: 100
+# Connect directly to hardware instead of via gcaps
+direct: false
+# Subscribe to messages, data records, and/or interrupts
+# Possible values: (NONE), MG, DR, EI, ALL
+subscribe: ALL
+# Encoder pulses per revolution
+encoder_ppr:
+  A: 2500
+
+config:
+  # Amplifier current loop
+  # 0 for normal current loop gain
+  # 0.5 for chopper mode and normal loop gain
+  # 1 for higher current loop gain
+  # 1.5 for chopper mode and higher
+  AUA: 0
+
+  # Configure Encoder
+  CEA: 3
+
+  # Motor Type
+  MTA: -1
+
+  # Brush axis
+  BRA: 0
+
+  # Acceleration for inertia 0.165e-4 Kg.m^2 and nominal torque 0.64 N.m
+  # That is, only the shaft inertia, ACA = 15433206
+  ACA: 7715840
+
+  # Deceleration
+  DCA: 7715840
