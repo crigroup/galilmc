@@ -1,6 +1,6 @@
 # Sensor and state controllers
-address: 192.168.0.71
-rate: 100
+address: 192.168.0.41
+rate: 10
 # Connect directly to hardware instead of via gcaps
 direct: false
 # Subscribe to messages, data records, and/or interrupts

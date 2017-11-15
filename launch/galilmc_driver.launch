@@ -7,7 +7,6 @@
   <arg if="$(arg debug)"      name="DEBUG" value="--debug"/>
   <arg unless="$(arg debug)"  name="DEBUG" value=""/>
 
-
   <node name="galilmc_driver" pkg="galilmc" type="galilmc_driver.py"
     output="screen" args="$(arg DEBUG)" ns="$(arg namespace)">
     <rosparam file="$(find galilmc)/config/dmc_4143.yaml" command="load" />

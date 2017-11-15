@@ -64,7 +64,7 @@ class GalilHardwareInterface(object):
   def get_position(self, axis):
     axis = axis.upper()
     try:
-      position = float(self.g.GCommand('TP{}=?'.format(axis)))
+      position = float(self.g.GCommand('TP{}'.format(axis)))
     except (gclib.GclibError, ValueError):
       position = None
     return position
@@ -72,7 +72,7 @@ class GalilHardwareInterface(object):
   def get_velocity(self, axis):
     axis = axis.upper()
     try:
-      velocity = float(self.g.GCommand('TV{}=?'.format(axis)))
+      velocity = float(self.g.GCommand('TV{}'.format(axis)))
     except (gclib.GclibError, ValueError):
       velocity = None
     return velocity

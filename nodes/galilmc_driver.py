@@ -54,13 +54,15 @@ class GalilDriver(object):
         self.encoder_ppr[axis] = 1.0
     # Setup state publisher
     self.state_pub = rospy.Publisher('state', JointState, queue_size=1)
-    self.rate = np.clip(read_parameter('~rate', 100), 1, 1000)
+    self.rate = np.clip(read_parameter('~rate', 10), 1, 100)
 
   def jog_cb(self, msg, axis):
     if not self.interface.is_valid_axis(axis):
       rospy.logwarn('Received command for invalid axis: {}'.format(axis))
       return
     counts_per_sec = msg.data * self.encoder_ppr[axis] / 60.
+    rospy.logdebug('Received command: {0} RPM, {1} counts/sec'.format(msg.data, 
+                                                              counts_per_sec))
     with self.mutex:
       self.interface.jog(axis, counts_per_sec)
 
@@ -80,16 +82,19 @@ class GalilDriver(object):
     state.effort = [0. for _ in range(self.interface.num_axes)]
     r = rospy.Rate(self.rate)
     while not rospy.is_shutdown():
+      valid_reading = True
       with self.mutex:
         for i,axis in enumerate(axes_str):
           ppr = float(self.encoder_ppr[axis])
           position = self.interface.get_position(axis)
           velocity = self.interface.get_velocity(axis)
           if (position is None) or (velocity is None):
-            continue
-          state.position[i] = position / ppr * 2*np.pi
+            valid_reading = False
+            break
+          state.position[i] = 2*np.pi * position / ppr
           state.velocity[i] = 60 * velocity / ppr
-      self.state_pub.publish(state)
+      if valid_reading:
+        self.state_pub.publish(state)
       r.sleep()
 
 def parse_args():
