@@ -45,7 +45,7 @@ class GalilHardwareInterface(object):
       cmd += ' -s {}'.format(subscribe.name)
     try:
       self.g.GOpen(cmd)
-      # Report we managed to connect and get the number of axis
+      # Report we managed to connect and get the number of axes
       self.is_connected = True
       self.num_axes = len(self.g.GCommand('TP*=?').split(','))
     except gclib.GclibError as e:
@@ -69,6 +69,14 @@ class GalilHardwareInterface(object):
       position = None
     return position
 
+  def get_position_error(self, axis):
+    axis = axis.upper()
+    try:
+      position_error = float(self.g.GCommand('TE{}'.format(axis)))
+    except (gclib.GclibError, ValueError):
+      position_error = None
+    return position_error
+
   def get_velocity(self, axis):
     axis = axis.upper()
     try:
@@ -76,6 +84,14 @@ class GalilHardwareInterface(object):
     except (gclib.GclibError, ValueError):
       velocity = None
     return velocity
+
+  def get_torque(self, axis):
+    axis = axis.upper()
+    try:
+      torque = float(self.g.GCommand('TT{}'.format(axis)))
+    except (gclib.GclibError, ValueError):
+      torque = None
+    return torque
 
   def jog(self, axis, counts_per_sec):
     """
@@ -124,6 +140,16 @@ class GalilHardwareInterface(object):
       success = False
     return success
 
+  def stop(self, axis=None):
+    success = False
+    if self.is_connected:
+      if axis is None:
+        success = self.send_command('ST')
+      elif self.is_valid_axis(axis):
+        axis = axis.upper()
+        success = self.send_command('ST{}'.format(axis))
+    return success
+
   def turn_off(self, axis=None):
     """
     Turn off the specified motor. If `axis=None`, turn off all the motors
@@ -140,17 +166,16 @@ class GalilHardwareInterface(object):
 
     Notes
     -----
-    This command attempts to stop the axes before turning then off. This because
-    a `MO` commands fail if the axis is moving
+    This command attempts to stop the axes before turning then off. This is
+    because a `MO` command will fail if the axis is moving
     """
     success = False
     if self.is_connected:
+      self.stop(axis)
       if axis is None:
-        self.send_command('ST')
         success = self.send_command('MO')
       elif self.is_valid_axis(axis):
         axis = axis.upper()
-        self.send_command('ST{}'.format(axis))
         success = self.send_command('MO{}'.format(axis))
     return success
 

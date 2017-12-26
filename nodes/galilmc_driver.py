@@ -10,7 +10,7 @@ import numpy as np
 from criutils import read_parameter
 from galilmc import GalilHardwareInterface
 # Messages
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Float64MultiArray
 from sensor_msgs.msg import JointState
 
 
@@ -52,8 +52,10 @@ class GalilDriver(object):
       # Add missing encoder ppr
       if axis not in self.encoder_ppr:
         self.encoder_ppr[axis] = 1.0
-    # Setup state publisher
+    # Setup state publishers
     self.state_pub = rospy.Publisher('state', JointState, queue_size=1)
+    self.error_pub = rospy.Publisher('position_error', Float64MultiArray,
+                                                                  queue_size=1)
     self.rate = np.clip(read_parameter('~rate', 10), 1, 100)
 
   def jog_cb(self, msg, axis):
@@ -61,7 +63,7 @@ class GalilDriver(object):
       rospy.logwarn('Received command for invalid axis: {}'.format(axis))
       return
     counts_per_sec = msg.data * self.encoder_ppr[axis] / 60.
-    rospy.logdebug('Received command: {0} RPM, {1} counts/sec'.format(msg.data, 
+    rospy.logdebug('Received command: {0} RPM, {1} counts/sec'.format(msg.data,
                                                               counts_per_sec))
     with self.mutex:
       self.interface.jog(axis, counts_per_sec)
@@ -74,12 +76,14 @@ class GalilDriver(object):
     if not hasattr(self, 'rate'):
       return
     # Spin
-    state = JointState()
+    state_msg = JointState()
     axes_str = string.ascii_uppercase[:self.interface.num_axes]
-    state.name = [letter for letter in axes_str]
-    state.position = [0. for _ in range(self.interface.num_axes)]
-    state.velocity = [0. for _ in range(self.interface.num_axes)]
-    state.effort = [0. for _ in range(self.interface.num_axes)]
+    state_msg.name = [letter for letter in axes_str]
+    state_msg.position = [0. for _ in range(self.interface.num_axes)]
+    state_msg.velocity = [0. for _ in range(self.interface.num_axes)]
+    state_msg.effort = [0. for _ in range(self.interface.num_axes)]
+    error_msg = Float64MultiArray()
+    error_msg.data = [0. for _ in range(self.interface.num_axes)]
     r = rospy.Rate(self.rate)
     while not rospy.is_shutdown():
       valid_reading = True
@@ -88,13 +92,18 @@ class GalilDriver(object):
           ppr = float(self.encoder_ppr[axis])
           position = self.interface.get_position(axis)
           velocity = self.interface.get_velocity(axis)
-          if (position is None) or (velocity is None):
+          torque = self.interface.get_torque(axis)
+          error = self.interface.get_position_error(axis)
+          if None in [position, velocity, torque, error]:
             valid_reading = False
             break
-          state.position[i] = 2*np.pi * position / ppr
-          state.velocity[i] = 60 * velocity / ppr
+          state_msg.position[i] = 2*np.pi * position / ppr
+          state_msg.velocity[i] = 60 * velocity / ppr
+          state_msg.effort[i] = torque
+          error_msg.data[i] = error
       if valid_reading:
-        self.state_pub.publish(state)
+        self.state_pub.publish(state_msg)
+        self.error_pub.publish(error_msg)
       r.sleep()
 
 def parse_args():
