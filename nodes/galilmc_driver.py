@@ -79,11 +79,11 @@ class GalilDriver(object):
     state_msg = JointState()
     axes_str = string.ascii_uppercase[:self.interface.num_axes]
     state_msg.name = [letter for letter in axes_str]
-    state_msg.position = [0. for _ in range(self.interface.num_axes)]
-    state_msg.velocity = [0. for _ in range(self.interface.num_axes)]
-    state_msg.effort = [0. for _ in range(self.interface.num_axes)]
+    state_msg.position = np.zeros(self.interface.num_axes).tolist()
+    state_msg.velocity = np.zeros(self.interface.num_axes).tolist()
+    state_msg.effort = np.zeros(self.interface.num_axes).tolist()
     error_msg = Float64MultiArray()
-    error_msg.data = [0. for _ in range(self.interface.num_axes)]
+    error_msg.data = np.zeros(self.interface.num_axes).tolist()
     r = rospy.Rate(self.rate)
     while not rospy.is_shutdown():
       valid_reading = True
