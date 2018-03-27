@@ -7,6 +7,11 @@ import numpy as np
 
 _EPS = np.finfo(float).eps
 
+class ControlMode(enum.Enum):
+  NONE = 1
+  JOG = 2
+  POSITION_TRACKING = 3
+
 class GalilHardwareInterface(object):
   def __init__(self):
     # Default values
@@ -16,7 +21,8 @@ class GalilHardwareInterface(object):
 
   def _reset(self):
     self.num_axes = -1
-    self.is_connected = False
+    self.connected = False
+    self.mode = dict()
 
   def connect(self, address, subscribe, direct=True):
     """
@@ -46,8 +52,11 @@ class GalilHardwareInterface(object):
     try:
       self.g.GOpen(cmd)
       # Report we managed to connect and get the number of axes
-      self.is_connected = True
+      self.connected = True
       self.num_axes = len(self.g.GCommand('TP*=?').split(','))
+      for i in range(self.num_axes):
+        axis = string.ascii_uppercase[i]
+        self.mode[axis] = ControlMode.NONE
     except gclib.GclibError as e:
       self._reset()
     return cmd
@@ -62,6 +71,8 @@ class GalilHardwareInterface(object):
     return success
 
   def get_position(self, axis):
+    if not self.connected:
+      return None
     axis = axis.upper()
     try:
       position = float(self.g.GCommand('TP{}'.format(axis)))
@@ -70,6 +81,8 @@ class GalilHardwareInterface(object):
     return position
 
   def get_position_error(self, axis):
+    if not self.connected:
+      return None
     axis = axis.upper()
     try:
       position_error = float(self.g.GCommand('TE{}'.format(axis)))
@@ -78,6 +91,8 @@ class GalilHardwareInterface(object):
     return position_error
 
   def get_velocity(self, axis):
+    if not self.connected:
+      return None
     axis = axis.upper()
     try:
       velocity = float(self.g.GCommand('TV{}'.format(axis)))
@@ -86,6 +101,8 @@ class GalilHardwareInterface(object):
     return velocity
 
   def get_torque(self, axis):
+    if not self.connected:
+      return None
     axis = axis.upper()
     try:
       torque = float(self.g.GCommand('TT{}'.format(axis)))
@@ -99,16 +116,27 @@ class GalilHardwareInterface(object):
     ----------
     axis: str
       Letter that identifies the axis (A, B, C, etc)
-    counts_per_sec: float
-      The target jog speed of the axis. The units of this are count/second.
+    counts_per_sec: int
+      The target jog speed of the axis. The units of this are [counts/second].
     """
     axis = axis.upper()
+    if axis not in self.mode.keys():
+      raise ValueError('Jog command received invalid axis')
+    # Check the control mode is valid
+    if self.mode[axis] == ControlMode.NONE:
+      self.mode[axis] = ControlMode.JOG
+    elif self.mode[axis] != ControlMode.JOG:
+      raise TypeError('Cannot process jog command. Invalid control mode')
+    # Process the command
     if self.is_moving(axis):
-      self.send_command('JG{}'.format(axis), counts_per_sec)
+      self.send_command('JG{}'.format(axis), int(counts_per_sec))
     else:
       self.send_command('SH{}'.format(axis))
-      self.send_command('JG{}'.format(axis), counts_per_sec)
+      self.send_command('JG{}'.format(axis), int(counts_per_sec))
       self.send_command('BG{}'.format(axis))
+
+  def is_connected(self):
+    return self.connected
 
   def is_moving(self, axis):
     axis = axis.upper()
@@ -124,6 +152,35 @@ class GalilHardwareInterface(object):
     if axis in string.ascii_uppercase:
       is_valid = string.ascii_uppercase.index(axis) < self.num_axes
     return is_valid
+
+  def position_tracking(self, axis, counts, counts_per_sec):
+    """
+    Parameters
+    ----------
+    axis: str
+      Letter that identifies the axis (A, B, C, etc)
+    counts: int
+      The absolute position target. The units of this are [counts].
+    counts_per_sec: int
+      The target speed of the axis. The units of this are [counts/second].
+    """
+    axis = axis.upper()
+    if axis not in self.mode.keys():
+      raise ValueError('Position command received invalid axis')
+    # Check the control mode is valid
+    if self.mode[axis] == ControlMode.NONE:
+      self.mode[axis] = ControlMode.POSITION_TRACKING
+      # Change the coordinate system and enable the servo control
+      self.send_command('SH{}'.format(axis))
+      self.send_command('BG{}'.format(axis))
+      # Enable position tracking
+      self.send_command('DP{}'.format(axis), 0) # Zero the absolute position
+      self.send_command('PT{}'.format(axis), 1) # Start PT mode
+    elif self.mode[axis] != ControlMode.POSITION_TRACKING:
+      raise TypeError('Cannot process position command. Invalid control mode')
+    # Process the command
+    self.send_command('SP{}'.format(axis), int(counts_per_sec))
+    self.send_command('PA{}'.format(axis), int(counts))
 
   def send_command(self, key, value=None):
     cmd = key
@@ -142,12 +199,20 @@ class GalilHardwareInterface(object):
 
   def stop(self, axis=None):
     success = False
-    if self.is_connected:
+    if self.connected:
       if axis is None:
         success = self.send_command('ST')
       elif self.is_valid_axis(axis):
         axis = axis.upper()
         success = self.send_command('ST{}'.format(axis))
+    # Reset control mode
+    if success:
+      if axis is None:
+        axes = self.mode.keys()
+      elif self.is_valid_axis(axis):
+        axes = [axis]
+      for a in axes:
+        self.mode[a.upper()] = ControlMode.NONE
     return success
 
   def turn_off(self, axis=None):
@@ -170,7 +235,7 @@ class GalilHardwareInterface(object):
     because a `MO` command will fail if the axis is moving
     """
     success = False
-    if self.is_connected:
+    if self.connected:
       self.stop(axis)
       if axis is None:
         success = self.send_command('MO')
@@ -190,3 +255,36 @@ class SubscribeType(enum.Enum):
   DR = 3
   EI = 4
   ALL = 5
+
+
+if __name__ == '__main__':
+  # Simple usage example
+  from galilmc import GalilHardwareInterface
+  interface = GalilHardwareInterface()
+  cmd = interface.connect('192.168.0.41', subscribe='ALL', direct=False)
+  if not interface.is_connected():
+    raise Exception('Failed to connect to the galilmc: {}'.format(cmd))
+  # Setup
+  interface.send_command('AUA', 1)
+  interface.send_command('AGA', 2)
+  interface.send_command('TLA', 7)
+  interface.send_command('CEA', 3)
+  interface.send_command('MTA', -1)
+  interface.send_command('BRA', 0)
+  interface.send_command('ACA', 15432704)
+  interface.send_command('DCA', 15432704)
+  interface.send_command('ERA', 2500)
+  interface.send_command('OEA', 0)
+  interface.send_command('KPA', 6)    # Low gain to avoid overshooting
+  interface.send_command('KDA', 64)
+  # Test the position tracking
+  rpm = 1400
+  encoder_ppr = 2500
+  depth = 8e-3
+  pitch = 0.8e-3
+  counts = (depth / pitch) * encoder_ppr
+  counts_per_sec = rpm * encoder_ppr / 60.
+  interface.position_tracking('A', counts, counts_per_sec)
+  # Clean-up
+  interface.turn_off()
+  interface.disconnect()

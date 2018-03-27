@@ -29,7 +29,7 @@ class GalilDriver(object):
     subscribe = read_parameter('~subscribe', 'NONE')
     # Connect to and configure the controller
     cmd = self.interface.connect(address, subscribe, direct)
-    if not self.interface.is_connected:
+    if not self.interface.is_connected():
       rospy.logerr('Failed to connect to the galilmc: {}'.format(cmd))
       return
     self.encoder_ppr = read_parameter('~encoder_ppr', None)
@@ -43,12 +43,15 @@ class GalilDriver(object):
     rospy.on_shutdown(self.on_shutdown)
     # Setup subscribers
     self.mutex = threading.Lock()
-    self.enabled = dict()
     for i in range(self.interface.num_axes):
       axis = string.ascii_uppercase[i]
-      self.enabled[axis] = False
-      topic = 'axis_{}/jog'.format(axis.lower())
-      rospy.Subscriber(topic, Float64, self.jog_cb, callback_args=axis)
+      # Position tracking subscriber
+      position_topic = 'axis_{}/position'.format(axis.lower())
+      rospy.Subscriber(position_topic, Float64, self.cb_position,
+                                                            callback_args=axis)
+      # Jog subscriber
+      jog_topic = 'axis_{}/jog'.format(axis.lower())
+      rospy.Subscriber(jog_topic, Float64, self.cb_jog, callback_args=axis)
       # Add missing encoder ppr
       if axis not in self.encoder_ppr:
         self.encoder_ppr[axis] = 1.0
@@ -58,15 +61,26 @@ class GalilDriver(object):
                                                                   queue_size=1)
     self.rate = np.clip(read_parameter('~rate', 10), 1, 100)
 
-  def jog_cb(self, msg, axis):
+  def cb_jog(self, msg, axis):
     if not self.interface.is_valid_axis(axis):
-      rospy.logwarn('Received command for invalid axis: {}'.format(axis))
+      rospy.logwarn('Received jog cmd for invalid axis: {}'.format(axis))
       return
     counts_per_sec = msg.data * self.encoder_ppr[axis] / 60.
     rospy.logdebug('Received command: {0} RPM, {1} counts/sec'.format(msg.data,
                                                               counts_per_sec))
     with self.mutex:
       self.interface.jog(axis, counts_per_sec)
+
+  def cb_position(self, msg, axis):
+    if not self.interface.is_valid_axis(axis):
+      rospy.logwarn('Received position cmd for invalid axis: {}'.format(axis))
+      return
+    counts = msg.position * self.encoder_ppr[axis] / (2*np.pi)
+    counts_per_sec = msg.velocity * self.encoder_ppr[axis] / 60.
+    rospy.logdebug('Received command: {0} rad, {1} counts'.format(msg.position,
+                                                                        counts))
+    with self.mutex:
+      self.interface.position_tracking(axis, counts, counts_per_sec)
 
   def on_shutdown(self):
     self.interface.turn_off()
