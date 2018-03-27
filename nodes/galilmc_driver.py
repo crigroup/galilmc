@@ -32,17 +32,16 @@ class GalilDriver(object):
     if not self.interface.is_connected():
       rospy.logerr('Failed to connect to the galilmc: {}'.format(cmd))
       return
-    self.encoder_ppr = read_parameter('~encoder_ppr', None)
+    self.encoder_ppr = read_parameter('~encoder_ppr', dict())
     self.interface.turn_off()
     config = read_parameter('~config', {})
     for key, value in config.items():
-      success = self.interface.send_command(key, value)
-      if not success:
+      res = self.interface.send_command(key, value)
+      if res is None:
         rospy.logwarn('Failed to send command: {0}={1}'.format(key,value))
     # Shutdown hook
     rospy.on_shutdown(self.on_shutdown)
     # Setup subscribers
-    self.mutex = threading.Lock()
     for i in range(self.interface.num_axes):
       axis = string.ascii_uppercase[i]
       # Position tracking subscriber
@@ -68,8 +67,7 @@ class GalilDriver(object):
     counts_per_sec = msg.data * self.encoder_ppr[axis] / 60.
     rospy.logdebug('Received command: {0} RPM, {1} counts/sec'.format(msg.data,
                                                               counts_per_sec))
-    with self.mutex:
-      self.interface.jog(axis, counts_per_sec)
+    self.interface.jog(axis, counts_per_sec)
 
   def cb_position(self, msg, axis):
     if not self.interface.is_valid_axis(axis):
@@ -79,8 +77,7 @@ class GalilDriver(object):
     counts_per_sec = msg.velocity * self.encoder_ppr[axis] / 60.
     rospy.logdebug('Received command: {0} rad, {1} counts'.format(msg.position,
                                                                         counts))
-    with self.mutex:
-      self.interface.position_tracking(axis, counts, counts_per_sec)
+    self.interface.position_tracking(axis, counts, counts_per_sec)
 
   def on_shutdown(self):
     self.interface.turn_off()
@@ -101,20 +98,19 @@ class GalilDriver(object):
     r = rospy.Rate(self.rate)
     while not rospy.is_shutdown():
       valid_reading = True
-      with self.mutex:
-        for i,axis in enumerate(axes_str):
-          ppr = float(self.encoder_ppr[axis])
-          position = self.interface.get_position(axis)
-          velocity = self.interface.get_velocity(axis)
-          torque = self.interface.get_torque(axis)
-          error = self.interface.get_position_error(axis)
-          if None in [position, velocity, torque, error]:
-            valid_reading = False
-            break
-          state_msg.position[i] = 2*np.pi * position / ppr
-          state_msg.velocity[i] = 60 * velocity / ppr
-          state_msg.effort[i] = torque
-          error_msg.data[i] = error
+      for i,axis in enumerate(axes_str):
+        ppr = float(self.encoder_ppr[axis])
+        position = self.interface.get_position(axis)
+        velocity = self.interface.get_velocity(axis)
+        torque = self.interface.get_torque(axis)
+        error = self.interface.get_position_error(axis)
+        if None in [position, velocity, torque, error]:
+          valid_reading = False
+          break
+        state_msg.position[i] = 2*np.pi * position / ppr
+        state_msg.velocity[i] = 60 * velocity / ppr
+        state_msg.effort[i] = torque
+        error_msg.data[i] = error
       if valid_reading:
         self.state_pub.publish(state_msg)
         self.error_pub.publish(error_msg)

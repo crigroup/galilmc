@@ -2,6 +2,7 @@
 import enum
 import gclib
 import string
+import threading
 import collections
 import numpy as np
 
@@ -18,6 +19,7 @@ class GalilHardwareInterface(object):
     self._reset()
     # Instance of the gclib python class
     self.g = gclib.py()
+    self.mutex = threading.Lock()
 
   def _reset(self):
     self.num_axes = -1
@@ -50,10 +52,11 @@ class GalilHardwareInterface(object):
     elif isinstance(subscribe, SubscribeType):
       cmd += ' -s {}'.format(subscribe.name)
     try:
-      self.g.GOpen(cmd)
+      with self.mutex:
+        self.g.GOpen(cmd)
       # Report we managed to connect and get the number of axes
       self.connected = True
-      self.num_axes = len(self.g.GCommand('TP*=?').split(','))
+      self.num_axes = len(self.send_command('TP*=?').split(','))
       for i in range(self.num_axes):
         axis = string.ascii_uppercase[i]
         self.mode[axis] = ControlMode.NONE
@@ -64,7 +67,8 @@ class GalilHardwareInterface(object):
   def disconnect(self):
     self._reset()
     try:
-      self.g.GClose()
+      with self.mutex:
+        self.g.GClose()
       success = True
     except gclib.GclibError:
       success = False
@@ -75,7 +79,7 @@ class GalilHardwareInterface(object):
       return None
     axis = axis.upper()
     try:
-      position = float(self.g.GCommand('TP{}'.format(axis)))
+      position = float(self.send_command('TP{}'.format(axis)))
     except (gclib.GclibError, ValueError):
       position = None
     return position
@@ -85,7 +89,7 @@ class GalilHardwareInterface(object):
       return None
     axis = axis.upper()
     try:
-      position_error = float(self.g.GCommand('TE{}'.format(axis)))
+      position_error = float(self.send_command('TE{}'.format(axis)))
     except (gclib.GclibError, ValueError):
       position_error = None
     return position_error
@@ -95,7 +99,7 @@ class GalilHardwareInterface(object):
       return None
     axis = axis.upper()
     try:
-      velocity = float(self.g.GCommand('TV{}'.format(axis)))
+      velocity = float(self.send_command('TV{}'.format(axis)))
     except (gclib.GclibError, ValueError):
       velocity = None
     return velocity
@@ -105,7 +109,7 @@ class GalilHardwareInterface(object):
       return None
     axis = axis.upper()
     try:
-      torque = float(self.g.GCommand('TT{}'.format(axis)))
+      torque = float(self.send_command('TT{}'.format(axis)))
     except (gclib.GclibError, ValueError):
       torque = None
     return torque
@@ -141,7 +145,7 @@ class GalilHardwareInterface(object):
   def is_moving(self, axis):
     axis = axis.upper()
     try:
-      res = float(self.g.GCommand('MG _BG{}'.format(axis)))
+      res = float(self.send_command('MG _BG{}'.format(axis)))
     except gclib.GclibError:
       res = 0.
     return res > _EPS
@@ -191,20 +195,22 @@ class GalilHardwareInterface(object):
     elif value is not None:
       raise TypeError('Unsupported value type: {}'.format(type(value)))
     try:
-      self.g.GCommand(cmd)
-      success = True
+      with self.mutex:
+        res = self.g.GCommand(cmd)
     except gclib.GclibError:
-      success = False
-    return success
+      res = None
+    return res
 
   def stop(self, axis=None):
     success = False
     if self.connected:
       if axis is None:
-        success = self.send_command('ST')
+        res = self.send_command('ST')
+        success = res is not None
       elif self.is_valid_axis(axis):
         axis = axis.upper()
-        success = self.send_command('ST{}'.format(axis))
+        res = self.send_command('ST{}'.format(axis))
+        success = res is not None
     # Reset control mode
     if success:
       if axis is None:
@@ -238,10 +244,12 @@ class GalilHardwareInterface(object):
     if self.connected:
       self.stop(axis)
       if axis is None:
-        success = self.send_command('MO')
+        res = self.send_command('MO')
+        success = res is not None
       elif self.is_valid_axis(axis):
         axis = axis.upper()
-        success = self.send_command('MO{}'.format(axis))
+        res = self.send_command('MO{}'.format(axis))
+        success = res is not None
     return success
 
 
